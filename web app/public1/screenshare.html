@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Desktop Streamer (Dynamic IP & Auto Reconnect)</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f6f9; padding: 20px; color: #333; }
+        .card { background: white; padding: 20px; border-radius: 10px; max-width: 800px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        #connectionStatus { font-weight: bold; margin-bottom: 15px; font-size: 1.1em; }
+        #debugLog { width: 100%; height: 160px; overflow: auto; border: 1px solid #ccc; padding: 10px; background: #272822; color: #f8f8f2; font-family: monospace; border-radius: 6px; box-sizing: border-box; }
+        input[type="text"] { padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; width: 220px; }
+        button { padding: 9px 16px; border-radius: 6px; border: none; background: #007bff; color: white; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button.success { background: #28a745; }
+        #localVideo { width: 400px; border-radius: 6px; border: 1px solid #ddd; background: #000; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🚀 Desktop Screen Sender to Unity</h2>
+        <div id="connectionStatus" style="color: #007bff;">Status: Initializing...</div>
+
+        <div style="margin-bottom: 15px;">
+            <label for="wsIpInput"><b>Signaling Server Address:</b> </label>
+            <input id="wsIpInput" type="text" placeholder="192.168.1.50:80" />
+            <button id="connectWsBtn">Connect Server</button>
+        </div>
+
+        <video id="localVideo" autoplay playsinline muted></video>
+        <br><br>
+
+        <button id="startBtn">1. Start Screen Capture</button>
+        <button id="connectBtn" class="success" disabled>2. Send to Unity</button>
+
+        <h3 style="margin-top: 20px;">Debug Logs</h3>
+        <pre id="debugLog"></pre>
+    </div>
+
+    <script type="text/javascript" src="https://unpkg.com/@unity/webrtc@3.0.0-pre.4/dist/unity-webrtc.js"></script>
+    
+    <script>
+        let localStream;
+        let peerConnection;
+        let ws = null;
+        let wsOpen = false;
+        let reconnectTimer = null;
+        const STORAGE_KEY = "ar_metaverse_screenshare_ip";
+        const DEFAULT_IP = "127.0.0.1:80";
+
+        const statusEl = document.getElementById('connectionStatus');
+        const debugLogEl = document.getElementById('debugLog');
+        const wsIpInput = document.getElementById('wsIpInput');
+        const connectWsBtn = document.getElementById('connectWsBtn');
+
+        wsIpInput.value = localStorage.getItem(STORAGE_KEY) || DEFAULT_IP;
+
+        function logDebug(message, data) {
+            const stamp = new Date().toLocaleTimeString();
+            const line = `[${stamp}] ${message}`;
+            console.log(line, data || '');
+            debugLogEl.textContent += line + (data ? ` ${JSON.stringify(data)}` : '') + "\n";
+            debugLogEl.scrollTop = debugLogEl.scrollHeight;
+        }
+
+        function setStatus(text, color) {
+            statusEl.innerText = text;
+            if (color) statusEl.style.color = color;
+            logDebug(`STATUS -> ${text}`);
+        }
+
+        function normalizeUrl(input) {
+            let val = (input || "").trim();
+            if (!val) val = DEFAULT_IP;
+            if (val.startsWith("http://")) val = "ws://" + val.substring(7);
+            else if (val.startsWith("https://")) val = "wss://" + val.substring(8);
+            else if (!val.startsWith("ws://") && !val.startsWith("wss://")) val = "ws://" + val;
+            return val;
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+
+            const userVal = wsIpInput.value;
+            localStorage.setItem(STORAGE_KEY, userVal.trim());
+            const wsUrl = normalizeUrl(userVal);
+
+            if (ws) {
+                ws.onopen = null;
+                ws.onclose = null;
+                ws.onerror = null;
+                ws.close();
+            }
+
+            setStatus(`Connecting to ${wsUrl}...`, '#007bff');
+            logDebug('Creating WebSocket', { url: wsUrl });
+
+            try {
+                ws = new WebSocket(wsUrl);
+            } catch (e) {
+                setStatus('Failed to create WebSocket', 'red');
+                return;
+            }
+
+            ws.onopen = () => {
+                wsOpen = true;
+                setStatus('Status: WebSocket connected to Signaling Server', 'green');
+                logDebug('WS open', { url: ws.url });
+            };
+
+            ws.onclose = (event) => {
+                wsOpen = false;
+                setStatus('Status: WebSocket closed - Auto reconnecting in 5s', 'orange');
+                logDebug('WS close', { code: event.code, reason: event.reason });
+                reconnectTimer = setTimeout(connectWebSocket, 5000);
+            };
+
+            ws.onerror = (event) => {
+                logDebug('WS error', { type: event.type });
+                setStatus("Status: WebSocket Error (Check IP or Server)", "red");
+            };
+
+            ws.onmessage = async (message) => {
+                try {
+                    const parsed = JSON.parse(message.data);
+                    
+                    const targetId = parsed.data ? parsed.data.connectionId : (parsed.connectionId || parsed.from);
+                    if (targetId && targetId !== 'windowsStream' && targetId !== 'screenshare') {
+                        return; // Ignore messages meant for windowsStream or inputStream!
+                    }
+
+                    logDebug('WS receive', { type: parsed.type, from: parsed.from });
+
+                    if (parsed.type === 'answer') {
+                        if (!peerConnection) return;
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                            type: 'answer',
+                            sdp: parsed.data.sdp
+                        }));
+                        setStatus("Status: Connected to Unity!", "green");
+                    } else if (parsed.type === 'candidate') {
+                        if (!peerConnection) return;
+                        await peerConnection.addIceCandidate(new RTCIceCandidate({
+                            candidate: parsed.data.candidate,
+                            sdpMid: parsed.data.sdpMid,
+                            sdpMLineIndex: parsed.data.sdpMLineIndex
+                        }));
+                        logDebug('Remote ICE candidate accepted');
+                    }
+                } catch (err) {
+                    logDebug('Error handling signaling message', { message: err.message });
+                }
+            };
+
+        }
+
+        connectWsBtn.onclick = () => connectWebSocket();
+        connectWebSocket();
+
+        function sendSignaling(payload) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                logDebug('WS send blocked. Socket not open');
+                setStatus('Status: WebSocket not open', 'red');
+                return false;
+            }
+
+            ws.send(JSON.stringify(payload));
+            logDebug('WS send', { type: payload.type, from: payload.from });
+            return true;
+        }
+
+        document.getElementById('startBtn').onclick = async () => {
+            try {
+                localStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
+                    audio: false
+                });
+                document.getElementById('localVideo').srcObject = localStream;
+                document.getElementById('connectBtn').disabled = false;
+                setStatus("Status: Screen Captured", "#007bff");
+                logDebug('Screen capture started');
+            } catch (e) {
+                logDebug('Screen capture failed', { message: e.message });
+                alert("Capture failed. Ensure HTTPS or localhost is used.");
+            }
+        };
+
+        document.getElementById('connectBtn').onclick = async () => {
+            if (!localStream) {
+                setStatus('Status: Capture screen first', 'red');
+                return;
+            }
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                setStatus('Status: Waiting for WebSocket connection', 'red');
+                return;
+            }
+
+            peerConnection = new RTCPeerConnection({
+                bundlePolicy: "max-bundle",
+                rtcpMuxPolicy: "require"
+            });
+
+            setStatus("Status: Connecting to Unity...", "#007bff");
+            logDebug('PeerConnection created');
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendSignaling({
+                        type: 'candidate',
+                        from: 'windowsStream',
+                        data: {
+                            candidate: event.candidate.candidate,
+                            sdpMid: event.candidate.sdpMid,
+                            sdpMLineIndex: event.candidate.sdpMLineIndex,
+                            connectionId: 'windowsStream'
+                        }
+                    });
+                }
+            };
+
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+
+            sendSignaling({
+                type: 'offer',
+                from: 'windowsStream',
+                data: {
+                    sdp: peerConnection.localDescription.sdp,
+                    type: 'offer',
+                    polite: true,
+                    connectionId: 'windowsStream'
+                }
+            });
+
+            logDebug('Offer sent to Unity');
+        };
+    </script>
+</body>
+</html>

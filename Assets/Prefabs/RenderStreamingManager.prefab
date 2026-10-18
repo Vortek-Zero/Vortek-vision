@@ -1,0 +1,115 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3994314458685575331
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5043907077063229349}
+  - component: {fileID: 791773070422918301}
+  - component: {fileID: 2627648485181704412}
+  - component: {fileID: 8413715003668382878}
+  - component: {fileID: 5597168217075293207}
+  m_Layer: 0
+  m_Name: RenderStreamingManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5043907077063229349
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3994314458685575331}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0, y: -0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &791773070422918301
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3994314458685575331}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 045786cf504bd7347842d6948241cbd0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderStreaming::Unity.RenderStreaming.SignalingManager
+  m_useDefault: 1
+  signalingSettingsObject: {fileID: 0}
+  signalingSettings:
+    rid: 582729729346109511
+  handlers:
+  - {fileID: 2627648485181704412}
+  runOnAwake: 1
+  evaluateCommandlineArguments: 1
+  references:
+    version: 2
+    RefIds:
+    - rid: 582729729346109511
+      type: {class: WebSocketSignalingSettings, ns: Unity.RenderStreaming, asm: Unity.RenderStreaming}
+      data:
+        m_url: ws://127.0.0.1
+        m_iceServers:
+        - m_urls:
+          - stun:stun.l.google.com:19302
+          m_username: 
+          m_credentialType: 0
+          m_credential: 
+--- !u!114 &2627648485181704412
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3994314458685575331}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2307e7ad91222841b562bebd81a69a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderStreaming::Unity.RenderStreaming.Broadcast
+  streams:
+  - {fileID: 8413715003668382878}
+--- !u!114 &8413715003668382878
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3994314458685575331}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4872c2e12a0e07b498876d68f1e51143, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderStreaming::Unity.RenderStreaming.VideoStreamReceiver
+  m_Codec:
+    m_MimeType: 
+    m_SdpFmtpLine: 
+  m_RenderMode: 0
+  m_TargetTexture: {fileID: 8400000, guid: d605af3bf44ab6848abd6f841602b7fa, type: 2}
+--- !u!114 &5597168217075293207
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3994314458685575331}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0df0cee391f2ae642992e21b2e019a60, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StreamConnectionHandler
+  videoReceiver: {fileID: 8413715003668382878}
+  targetRenderer: {fileID: 0}

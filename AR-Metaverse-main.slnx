@@ -1,0 +1,12 @@
+﻿<Solution>
+  <Project Path="Unity.RenderStreaming.Editor.csproj" />
+  <Project Path="Unity.RenderStreaming.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.StarterAssets.csproj" />
+  <Project Path="Unity.RenderStreaming.RuntimeTests.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="Unity.RenderStreaming.EditorTests.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.ARStarterAssets.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.ARStarterAssets.Editor.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.StarterAssets.Editor.csproj" />
+</Solution>

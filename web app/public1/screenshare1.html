@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Desktop Streamer (No CSS)</title>
+</head>
+<body>
+    <h2>Desktop Screen Sender</h2>
+    <div id="connectionStatus" style="color: blue;">Status: Ready</div>
+    <br>
+
+    <label for="wsAddressInput">Signaling Server (default 127.0.0.1:80):</label>
+    <input id="wsAddressInput" type="text" value="127.0.0.1:80" style="width: 240px;" />
+    <button id="applyWsBtn">Apply Server</button>
+    <br><br>
+    
+    <video id="localVideo" autoplay playsinline muted style="width: 400px; border: 1px solid black; background: #eee;"></video>
+    <br><br>
+    
+    <button id="startBtn">1. Start Screen Capture</button>
+    <button id="connectBtn" disabled>2. Send to Unity</button>
+
+    <script type="text/javascript" src="https://unpkg.com/@unity/webrtc@3.0.0-pre.4/dist/unity-webrtc.js"></script>
+    
+    <script>
+        let localStream;
+        let peerConnection;
+        let ws;
+        let hasSentOffer = false;
+        let pendingLocalCandidates = [];
+        let pendingRemoteCandidates = [];
+        const defaultSignalingAddress = "127.0.0.1:80";
+
+        const connectionStatus = document.getElementById('connectionStatus');
+        const wsAddressInput = document.getElementById('wsAddressInput');
+        const applyWsBtn = document.getElementById('applyWsBtn');
+        const connectBtn = document.getElementById('connectBtn');
+
+        function normalizeWsAddress(input) {
+            const trimmed = (input || "").trim();
+            if (!trimmed) {
+                return "ws://" + defaultSignalingAddress;
+            }
+
+            if (trimmed.startsWith("ws://") || trimmed.startsWith("wss://")) {
+                return trimmed;
+            }
+
+            if (trimmed.startsWith("http://")) {
+                return "ws://" + trimmed.slice(7);
+            }
+
+            if (trimmed.startsWith("https://")) {
+                return "wss://" + trimmed.slice(8);
+            }
+
+            return "ws://" + trimmed;
+        }
+
+        function updateStatus(text, color) {
+            connectionStatus.innerText = text;
+            connectionStatus.style.color = color;
+        }
+
+        function sendCandidateMessage(candidate) {
+            return sendWsMessage({
+                type: 'candidate',
+                from: 'windowsStream',
+                data: {
+                    candidate: candidate.candidate,
+                    sdpMid: candidate.sdpMid,
+                    sdpMLineIndex: candidate.sdpMLineIndex,
+                    connectionId: 'windowsStream'
+                }
+            });
+        }
+
+        async function flushPendingRemoteCandidates() {
+            if (!peerConnection || !peerConnection.remoteDescription) {
+                return;
+            }
+
+            while (pendingRemoteCandidates.length > 0) {
+                const candidate = pendingRemoteCandidates.shift();
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+        }
+
+        function connectWebSocket(inputAddress) {
+            const wsUrl = normalizeWsAddress(inputAddress || defaultSignalingAddress);
+            wsAddressInput.value = wsUrl.replace(/^wss?:\/\//, "");
+
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                ws.close();
+            }
+
+            updateStatus("Status: Connecting WebSocket to " + wsUrl + " ...", "blue");
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                updateStatus("Status: WebSocket connected to " + wsUrl, "green");
+            };
+
+            ws.onmessage = async (message) => {
+                const parsed = JSON.parse(message.data);
+
+                if (parsed.type === 'answer') {
+                    if (!peerConnection) {
+                        return;
+                    }
+
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                        type: 'answer',
+                        sdp: parsed.data.sdp
+                    }));
+                    await flushPendingRemoteCandidates();
+                    updateStatus("Status: Connected to Unity!", "green");
+                } else if (parsed.type === 'candidate') {
+                    const candidate = {
+                        candidate: parsed.data.candidate,
+                        sdpMid: parsed.data.sdpMid,
+                        sdpMLineIndex: parsed.data.sdpMLineIndex
+                    };
+
+                    if (!peerConnection || !peerConnection.remoteDescription) {
+                        pendingRemoteCandidates.push(candidate);
+                        return;
+                    }
+
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            };
+
+            ws.onerror = () => {
+                updateStatus("Status: WebSocket Error (Is signaling server running?)", "red");
+            };
+
+            ws.onclose = () => {
+                if (connectionStatus.innerText.indexOf("Error") === -1) {
+                    updateStatus("Status: WebSocket disconnected", "orange");
+                }
+            };
+        }
+
+        function sendWsMessage(payload) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                updateStatus("Status: WebSocket is not open. Click Apply Server first.", "red");
+                return false;
+            }
+
+            ws.send(JSON.stringify(payload));
+            return true;
+        }
+
+        applyWsBtn.onclick = () => {
+            connectWebSocket(wsAddressInput.value);
+        };
+
+        // Auto-connect to default server when page opens.
+        connectWebSocket(defaultSignalingAddress);
+
+        document.getElementById('startBtn').onclick = async () => {
+            try {
+                // localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                localStream = await navigator.mediaDevices.getDisplayMedia({video: {frameRate: { ideal: 60, max: 60 }},audio: false}); // Request 60fps if possible for smoother streaming
+                document.getElementById('localVideo').srcObject = localStream;
+                connectBtn.disabled = false;
+                updateStatus("Status: Screen Captured", "blue");
+            } catch (e) {
+                console.error("Screen capture failed:", e);
+                alert("Capture failed. Make sure you are using HTTPS or localhost.");
+            }
+        };
+
+        connectBtn.onclick = async () => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                updateStatus("Status: WebSocket is not connected. Apply a valid server first.", "red");
+                return;
+            }
+
+            peerConnection = new RTCPeerConnection();
+            hasSentOffer = false;
+            pendingLocalCandidates = [];
+            pendingRemoteCandidates = [];
+            updateStatus("Status: Connecting to Unity...", "blue");
+
+            // Add the screen video track
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            // Handle ICE Candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    if (!hasSentOffer) {
+                        pendingLocalCandidates.push(event.candidate);
+                        return;
+                    }
+
+                    sendCandidateMessage(event.candidate);
+                }
+            };
+
+            // Create Offer
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+
+            sendWsMessage({
+                type: 'offer', 
+                from: 'windowsStream',
+                data: {
+                    sdp: peerConnection.localDescription.sdp, 
+                    type: 'offer',
+                    polite: true,
+                    connectionId: 'windowsStream'
+                }
+            });
+
+            hasSentOffer = true;
+            for (const candidate of pendingLocalCandidates) {
+                sendCandidateMessage(candidate);
+            }
+            pendingLocalCandidates = [];
+            
+            console.log("Offer sent!");
+        };
+    </script>
+</body>
+</html>

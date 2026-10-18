@@ -1,0 +1,148 @@
+<!-- Standard HTML5 Document Declaration -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Desktop Streamer</title>
+</head>
+<body>
+    <h2>Desktop Screen Sender</h2>
+
+    <!-- UI element to display current connection status (Ready, Connecting, Connected) -->
+    <div id="connectionStatus" style="color: blue;">Status: Ready</div>
+    <br>
+    
+    <!-- 
+      Local Preview Player: Shows what you are about to share. 
+      'autoplay' automatically plays the stream once attached via JavaScript.
+      'muted' prevents audio feedback loops.
+    -->
+    <video id="localVideo" autoplay playsinline muted style="width: 400px; border: 1px solid black; background: #eee;"></video>
+    <br><br>
+    
+    <!-- Control Buttons -->
+    <!-- Button to trigger the browser's native screen picker -->
+    <button id="startBtn">1. Start Screen Capture</button>
+    <!-- Starts disabled; enabled in JS only after a screen has been successfully selected -->
+    <button id="connectBtn" disabled>2. Send to Unity</button>
+
+    <!-- 
+      Unity WebRTC Library: This script provides the custom modifications and 
+      components required to negotiate a connection specifically with Unity's Render Streaming package.
+    -->
+    <script type="text/javascript" src="https://unpkg.com/@unity/webrtc@3.0.0-pre.4/dist/unity-webrtc.js"></script>
+    
+    <script>
+        // GLOBAL VARIABLES
+        let localStream;    // Will store the actual video data from your screen
+        let peerConnection; // The "Bridge" object that connects this browser to Unity
+
+        // WEBSOCKET (The Messenger):
+        // This opens a text-based communication line to your signaling server.
+        // It doesn't send video; it only sends "notes" to help the two sides find each other.
+        const ws = new WebSocket('ws://192.170.2.137:80');
+
+        // --- STEP 1: CAPTURE THE SCREEN ---
+        document.getElementById('startBtn').onclick = async () => {
+            try {
+                // navigator.mediaDevices.getDisplayMedia: This is the magic command that 
+                // triggers the browser's "Select a Tab/Window/Screen" popup.
+                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                
+                // Show the captured screen in our local <video> element
+                document.getElementById('localVideo').srcObject = localStream;
+                
+                // Now that we have a stream, we can allow the user to click "Connect"
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('connectionStatus').innerText = "Status: Screen Captured";
+            } catch (e) {
+                console.error("Screen capture failed:", e);
+                alert("Capture failed. Make sure you are using HTTPS or localhost.");
+            }
+        };
+
+        // --- STEP 2: START THE WEBRTC HANDSHAKE ---
+        document.getElementById('connectBtn').onclick = async () => {
+            // RTCPeerConnection: Creating the actual "Bridge" object.
+            peerConnection = new RTCPeerConnection();
+            document.getElementById('connectionStatus').innerText = "Status: Connecting to Unity...";
+
+            // ATTACH VIDEO: We take the tracks (video data) from our screen capture
+            // and "plug them in" to the bridge so they are ready to be sent.
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            // ICE CANDIDATES (Network Directions): 
+            // As the bridge is built, the browser finds "candidates" (IP addresses/ports).
+            // This function sends those directions to Unity so Unity knows how to find your computer.
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ 
+                        type: 'candidate', 
+                        from: 'ScreenStream',
+                        // connectionId: 'ScreenStream',
+                        data: {
+                            candidate: event.candidate.candidate,
+                            sdpMid: event.candidate.sdpMid,
+                            sdpMLineIndex: event.candidate.sdpMLineIndex,
+                            connectionId: 'ScreenStream'
+                        } 
+                    }));
+                }
+            };
+
+            // CREATE THE OFFER (The Contract):
+            // The browser writes a document (SDP) saying "I want to send video, here is my format."
+            const offer = await peerConnection.createOffer();
+            
+            // Set this as our "Local Description" (Our side of the agreement)
+            await peerConnection.setLocalDescription(offer);
+
+            // Send the Offer to Unity via the WebSocket messenger
+            ws.send(JSON.stringify({ 
+                type: 'offer', 
+                from: 'ScreenStream',
+                // connectionId: 'ScreenStream',
+                data: {
+                    sdp: peerConnection.localDescription.sdp, 
+                    type: 'offer',
+                    polite: true,
+                    connectionId: 'ScreenStream'
+                }
+            }));
+            
+            console.log("Offer sent to Unity!");
+        };
+
+        // --- STEP 3: LISTEN FOR UNITY'S RESPONSE ---
+        ws.onmessage = async (message) => {
+            // Turn the incoming text message back into a Javascript Object
+            const parsed = JSON.parse(message.data);
+            
+            // If Unity sends an 'answer' (Accepting our offer):
+            if (parsed.type === 'answer') {
+                // We set Unity's response as the "Remote Description" (Their side of the agreement)
+                await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: parsed.data.sdp
+                }));
+                document.getElementById('connectionStatus').innerText = "Status: Connected to Unity!";
+                document.getElementById('connectionStatus').style.color = "green";
+
+            // If Unity sends 'candidate' (Their network directions):
+            } else if (parsed.type === 'candidate') {
+                // We add their address info to our bridge so the connection stabilizes
+                await peerConnection.addIceCandidate(new RTCIceCandidate({
+                    candidate: parsed.data.candidate,
+                    sdpMid: parsed.data.sdpMid,
+                    sdpMLineIndex: parsed.data.sdpMLineIndex
+                }));
+            }
+        };
+
+        // ERROR HANDLING: If the WebSocket messenger fails (e.g., Unity server is off)
+        ws.onerror = () => {
+            document.getElementById('connectionStatus').innerText = "Status: WebSocket Error (Check your Server IP!)";
+            document.getElementById('connectionStatus').style.color = "red";
+        };
+    </script>
+</body>
+</html>

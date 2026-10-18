@@ -1,0 +1,35 @@
+{
+    "version": 1,
+    "name": "VRRemoteInput",
+    "maps": [
+        {
+            "name": "RemoteVR",
+            "id": "9f618496-9dfd-45ea-868d-a35baad258f3",
+            "actions": [
+                {
+                    "name": "Rotation",
+                    "type": "Value",
+                    "id": "f8c43e5f-6412-4f83-8833-55443b7e9374",
+                    "expectedControlType": "Quaternion",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "a5d50740-e03a-4af9-b997-9a3d5e587783",
+                    "path": "<AttitudeSensor>/attitude",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Rotation",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        }
+    ],
+    "controlSchemes": []
+}

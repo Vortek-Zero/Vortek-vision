@@ -1,0 +1,2 @@
+>> screenshare.html has a fixed IP which needs to be updated manually in the script. (recommended not to use)
+>> screenshare1.html gives option to change and set to new IP if server's IP is changed that too on site after opening.
